@@ -59,7 +59,7 @@ jobs:
         with:
           go-version: ${{ inputs.go-version }}
 
-      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-qemu-action@v4
         if: ${{ inputs.qemu-buildx }}
 
       - uses: docker/setup-buildx-action@v4
