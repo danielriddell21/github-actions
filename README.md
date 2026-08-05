@@ -62,8 +62,17 @@ GoReleaser, triggered by a `v*` tag push in the calling repo.
 | `docker-login` | `false` | ghcr.io login before goreleaser |
 | `qemu-buildx` | `false` | Multi-arch image builds |
 | `goreleaser-args` | `release --clean` | |
+| `prerelease` | `true` | Marks the release as a pre-release, never Latest |
 
 Secrets: `tap-app-private-key`, `otel-auth-token`.
+
+`prerelease` is applied after goreleaser via the API rather than through each
+repo's `.goreleaser.yaml`, so it stays a single central setting.
+
+This is what makes promotion manual. Releases land as pre-releases and are never
+Latest on their own; marking one as the full release fires the `released` event,
+which is the only thing `promote.yaml` listens for. Nothing is retagged or
+deployed until you make that call.
 
 `vars.TAP_APP_ID` and `vars.OTEL_ENDPOINT` resolve against the *calling*
 repository, so they are read directly and are not inputs.

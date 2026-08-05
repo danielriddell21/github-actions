@@ -35,6 +35,14 @@ on:
         description: Arguments passed to goreleaser.
         type: string
         default: release --clean
+      prerelease:
+        description: >-
+          Mark the created release as a pre-release, so it is never published as
+          Latest automatically. Promotion is then a manual step: marking the
+          release as the full/latest release fires the `released` event, which
+          is what promote.yaml waits for.
+        type: boolean
+        default: true
     secrets:
       tap-app-private-key:
         description: Private key of the GitHub App that can write to homebrew-tap.
@@ -92,3 +100,14 @@ jobs:
           HOMEBREW_TAP_TOKEN: ${{ steps.tap-token.outputs.token }}
           OTEL_AUTH_TOKEN: ${{ secrets.otel-auth-token }}
           OTEL_ENDPOINT: ${{ vars.OTEL_ENDPOINT }}
+
+      # Done here rather than via goreleaser's `release.prerelease`, so the
+      # behaviour is set once centrally instead of in every .goreleaser.yaml.
+      - name: Mark release as pre-release
+        if: ${{ inputs.prerelease }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          id=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${GITHUB_REF_NAME}" --jq .id)
+          gh api -X PATCH "repos/${GITHUB_REPOSITORY}/releases/${id}" \
+            -F prerelease=true -f make_latest=false
