@@ -87,7 +87,7 @@ jobs:
         with:
           go-version-file: ${{ inputs.go-version-file }}
 
-      - uses: danielriddell21/github-actions/actions/setup-ebiten@v1
+      - uses: danielriddell21/github-actions/.github/actions/setup-ebiten@v1
         if: ${{ inputs.ebiten }}
         with:
           xvfb: "true"
@@ -116,7 +116,7 @@ jobs:
         with:
           go-version-file: ${{ inputs.go-version-file }}
 
-      - uses: danielriddell21/github-actions/actions/setup-ebiten@v1
+      - uses: danielriddell21/github-actions/.github/actions/setup-ebiten@v1
         if: ${{ inputs.ebiten }}
 
       - name: golangci-lint
@@ -136,7 +136,7 @@ jobs:
         with:
           go-version-file: ${{ inputs.go-version-file }}
 
-      - uses: danielriddell21/github-actions/actions/setup-ebiten@v1
+      - uses: danielriddell21/github-actions/.github/actions/setup-ebiten@v1
         if: ${{ inputs.ebiten }}
 
       - name: Build
@@ -154,7 +154,7 @@ jobs:
         with:
           go-version-file: ${{ inputs.go-version-file }}
 
-      - uses: danielriddell21/github-actions/actions/setup-ebiten@v1
+      - uses: danielriddell21/github-actions/.github/actions/setup-ebiten@v1
         if: ${{ inputs.ebiten }}
         with:
           start-display: "true"

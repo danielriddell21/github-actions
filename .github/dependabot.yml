@@ -13,6 +13,6 @@ updates:
   # "/" only covers .github/workflows, so the composite action needs its own
   # entry or the actions it pins are never updated.
   - package-ecosystem: "github-actions"
-    directory: "/actions/setup-ebiten"
+    directory: "/.github/actions/setup-ebiten"
     schedule:
       interval: "weekly"

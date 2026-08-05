@@ -105,7 +105,7 @@ and it is applied conditionally.
 cannot be wrapped around it — the display has to already be up.
 
 ```yaml
-- uses: danielriddell21/github-actions/actions/setup-ebiten@v1
+- uses: danielriddell21/github-actions/.github/actions/setup-ebiten@v1
   with:
     start-display: "true"
 ```
