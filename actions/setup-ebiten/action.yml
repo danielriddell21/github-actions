@@ -1,0 +1,36 @@
+name: Setup Ebiten
+description: Install the system libraries Ebiten links against, and optionally a virtual display.
+
+inputs:
+  xvfb:
+    description: >-
+      Also install xvfb. Use for jobs that wrap their own command in
+      `xvfb-run -a`.
+    default: "false"
+  start-display:
+    description: >-
+      Install xvfb, start Xvfb on :99, and export DISPLAY for later steps. Use
+      where the command that needs a display is not ours to wrap — gremlins
+      runs `go test` itself, so `xvfb-run` cannot go around it.
+    default: "false"
+  display:
+    description: Display number used when start-display is true.
+    default: "99"
+
+runs:
+  using: composite
+  steps:
+    - name: Install system deps
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libgl1-mesa-dev libxcursor-dev libxi-dev \
+          libxinerama-dev libxrandr-dev libxxf86vm-dev libasound2-dev pkg-config \
+          ${{ (inputs.xvfb == 'true' || inputs.start-display == 'true') && 'xvfb' || '' }}
+
+    - name: Start virtual display
+      if: inputs.start-display == 'true'
+      shell: bash
+      run: |
+        Xvfb :${{ inputs.display }} -screen 0 1280x1024x24 >/dev/null 2>&1 &
+        echo "DISPLAY=:${{ inputs.display }}" >> "$GITHUB_ENV"
