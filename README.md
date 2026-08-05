@@ -2,16 +2,6 @@
 
 Reusable workflows and composite actions shared across the repos.
 
-Everything is pinned by callers to `@v1`. That tag is a moving major — push to
-`trunk`, then move it:
-
-```sh
-git tag -f v1 && git push -f origin v1
-```
-
-Callers pick up the change on their next run, so treat a push to `v1` as a
-change to every repo's CI at once.
-
 ## Reusable workflows
 
 ### `ci.yaml`
