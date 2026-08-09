@@ -27,6 +27,16 @@ on:
         description: Install the Ebiten system libraries before every job.
         type: boolean
         default: false
+      raylib:
+        description: Install the raylib system libraries before every job.
+        type: boolean
+        default: false
+      build-tags:
+        description: >-
+          Build tags applied to `go vet`. Test and build commands are supplied
+          whole by the caller, so put the tags in those directly.
+        type: string
+        default: ""
       vet:
         description: Run `go vet ./...` as part of the test job.
         type: boolean
@@ -92,9 +102,14 @@ jobs:
         with:
           xvfb: "true"
 
+      - uses: danielriddell21/github-actions/.github/actions/setup-raylib@v1
+        if: ${{ inputs.raylib }}
+        with:
+          xvfb: "true"
+
       - name: Vet
         if: ${{ inputs.vet }}
-        run: go vet ./...
+        run: go vet ${{ inputs.build-tags && format('-tags {0}', inputs.build-tags) || '' }} ./...
 
       - name: Test
         run: ${{ inputs.test-command }}
@@ -119,6 +134,9 @@ jobs:
       - uses: danielriddell21/github-actions/.github/actions/setup-ebiten@v1
         if: ${{ inputs.ebiten }}
 
+      - uses: danielriddell21/github-actions/.github/actions/setup-raylib@v1
+        if: ${{ inputs.raylib }}
+
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
@@ -139,6 +157,9 @@ jobs:
       - uses: danielriddell21/github-actions/.github/actions/setup-ebiten@v1
         if: ${{ inputs.ebiten }}
 
+      - uses: danielriddell21/github-actions/.github/actions/setup-raylib@v1
+        if: ${{ inputs.raylib }}
+
       - name: Build
         run: ${{ inputs.build-command }}
 
@@ -156,6 +177,11 @@ jobs:
 
       - uses: danielriddell21/github-actions/.github/actions/setup-ebiten@v1
         if: ${{ inputs.ebiten }}
+        with:
+          start-display: "true"
+
+      - uses: danielriddell21/github-actions/.github/actions/setup-raylib@v1
+        if: ${{ inputs.raylib }}
         with:
           start-display: "true"
 

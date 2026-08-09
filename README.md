@@ -16,6 +16,8 @@ off, so the minimal repos call this too rather than keeping a separate copy.
 | `test-command` | `go test -coverprofile=coverage.txt ./...` | Prefix `xvfb-run -a` when tests open a display |
 | `build-command` | `go build ./...` | |
 | `ebiten` | `false` | Pulls in `setup-ebiten` for every job |
+| `raylib` | `false` | Pulls in `setup-raylib` for every job |
+| `build-tags` | *(none)* | Build tags applied to `go vet` |
 | `vet` | `false` | Adds `go vet ./...` to the test job |
 | `coverage` | `true` | Codecov upload |
 | `build` / `lint` / `mutate` / `tag` | `true` | Job toggles |
@@ -107,4 +109,23 @@ cannot be wrapped around it — the display has to already be up.
 - uses: danielriddell21/github-actions/.github/actions/setup-ebiten@v1
   with:
     start-display: "true"
+```
+
+### `actions/setup-raylib`
+
+The X11/GL headers raylib links against, plus the same optional virtual
+display. Same inputs as `setup-ebiten`.
+
+The package list differs: raylib needs `libx11-dev` and `libxkbcommon-dev`,
+which Ebiten does not, and does not need `libxxf86vm-dev` or `libasound2-dev`.
+
+Unlike Ebiten — which the apps put behind a build tag, so an untagged build
+still compiles — raylib is imported unconditionally and `-tags x11` selects
+its backend. Every Go invocation needs the tag, which is why `build-tags`
+exists for the one command the caller cannot supply whole: `go vet`.
+
+```yaml
+- uses: danielriddell21/github-actions/.github/actions/setup-raylib@v1
+  with:
+    xvfb: "true"
 ```
