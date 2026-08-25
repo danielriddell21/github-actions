@@ -9,10 +9,21 @@ updates:
     directory: "/" # Location of package manifests
     schedule:
       interval: "weekly"
+    commit-message:
+      prefix: "chore(deps)"
 
-  # "/" only covers .github/workflows, so the composite action needs its own
+  # "/" only covers .github/workflows, so each composite action needs its own
   # entry or the actions it pins are never updated.
   - package-ecosystem: "github-actions"
     directory: "/.github/actions/setup-ebiten"
     schedule:
       interval: "weekly"
+    commit-message:
+      prefix: "chore(deps)"
+
+  - package-ecosystem: "github-actions"
+    directory: "/.github/actions/setup-raylib"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "chore(deps)"
