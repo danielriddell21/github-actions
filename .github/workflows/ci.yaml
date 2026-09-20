@@ -65,10 +65,21 @@ on:
         description: golangci-lint config path.
         type: string
         default: .golangci.yml
+      golangci-version:
+        description: >-
+          golangci-lint release to run. Pinned rather than floating: a linter
+          that updates underneath you turns a branch red for a commit nobody
+          made, which is exactly what happened when this said "latest".
+        type: string
+        default: v2.13.2
       gremlins-config:
         description: gremlins config path.
         type: string
         default: .gremlins.yaml
+      gremlins-version:
+        description: gremlins release to run. Pinned for the same reason as golangci-lint.
+        type: string
+        default: v0.6.0
       release-branch:
         description: Branch that mutation testing and tagging run on.
         type: string
@@ -140,7 +151,7 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
-          version: latest
+          version: ${{ inputs.golangci-version }}
           args: --config ${{ inputs.golangci-config }}
 
   build:
@@ -187,7 +198,7 @@ jobs:
 
       - uses: go-gremlins/gremlins-action@v1
         with:
-          version: latest
+          version: ${{ inputs.gremlins-version }}
           args: --config ${{ inputs.gremlins-config }}
 
   tag:
