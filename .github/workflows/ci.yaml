@@ -85,7 +85,7 @@ on:
           letsgo release the tag job runs. Pinned because it decides the next
           version, and a tool nobody chose is an answer nobody chose.
         type: string
-        default: v0.7.0
+        default: v0.8.0
       release-branch:
         description: Branch that mutation testing and tagging run on.
         type: string

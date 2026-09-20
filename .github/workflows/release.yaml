@@ -30,7 +30,7 @@ on:
           the archive layout and the linker flags, so a release built by a
           version nobody chose is a release nobody can reproduce.
         type: string
-        default: v0.7.0
+        default: v0.8.0
       plugins:
         description: >-
           Whitespace-separated letsgo plugins to install before the release,

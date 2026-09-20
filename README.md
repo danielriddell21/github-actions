@@ -25,7 +25,7 @@ off, so the minimal repos call this too rather than keeping a separate copy.
 | `golangci-version` | `v2.13.2` | Pinned; see below |
 | `gremlins-config` | `.gremlins.yaml` | |
 | `gremlins-version` | `v0.6.0` | Pinned |
-| `letsgo-version` | `v0.7.0` | Version the tag job runs |
+| `letsgo-version` | `v0.8.0` | Version the tag job runs |
 | `release-branch` | `trunk` | Gates `mutate` and `tag` |
 
 Secrets: `codecov-token` (when `coverage`), `tag-token` (when `tag`).
@@ -65,7 +65,7 @@ push in the calling repo.
 | --- | --- | --- |
 | `runs-on` | `ubuntu-latest` | Every target cross-compiles; no macOS runner needed |
 | `go-version-file` | `go.mod` | The compiler is a build input, so it is pinned by file |
-| `letsgo-version` | `v0.7.0` | |
+| `letsgo-version` | `v0.8.0` | |
 | `plugins` | *(none)* | e.g. `letsgo-env letsgo-multi` |
 | `plugins-version` | `v0.2.0` | letsgo-plugins release to install from |
 | `homebrew-tap` | `true` | Mints an App token scoped to the tap |
