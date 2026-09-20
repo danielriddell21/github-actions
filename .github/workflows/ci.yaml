@@ -80,6 +80,12 @@ on:
         description: gremlins release to run. Pinned for the same reason as golangci-lint.
         type: string
         default: v0.6.0
+      letsgo-version:
+        description: >-
+          letsgo release the tag job runs. Pinned because it decides the next
+          version, and a tool nobody chose is an answer nobody chose.
+        type: string
+        default: v0.7.0
       release-branch:
         description: Branch that mutation testing and tagging run on.
         type: string
@@ -89,7 +95,9 @@ on:
         description: Codecov upload token. Required when coverage is true.
         required: false
       tag-token:
-        description: PAT used to push tags, so the tag push retriggers downstream workflows.
+        description: >-
+          PAT the tag job checks out and pushes with. A tag pushed with the
+          workflow token starts no workflow, so the release would never fire.
         required: false
 
 # Permissions are deliberately not set here. A called workflow's job
@@ -108,12 +116,12 @@ jobs:
         with:
           go-version-file: ${{ inputs.go-version-file }}
 
-      - uses: danielriddell21/github-actions/.github/actions/setup-ebiten@v1
+      - uses: danielriddell21/github-actions/.github/actions/setup-ebiten@v2
         if: ${{ inputs.ebiten }}
         with:
           xvfb: "true"
 
-      - uses: danielriddell21/github-actions/.github/actions/setup-raylib@v1
+      - uses: danielriddell21/github-actions/.github/actions/setup-raylib@v2
         if: ${{ inputs.raylib }}
         with:
           xvfb: "true"
@@ -142,10 +150,10 @@ jobs:
         with:
           go-version-file: ${{ inputs.go-version-file }}
 
-      - uses: danielriddell21/github-actions/.github/actions/setup-ebiten@v1
+      - uses: danielriddell21/github-actions/.github/actions/setup-ebiten@v2
         if: ${{ inputs.ebiten }}
 
-      - uses: danielriddell21/github-actions/.github/actions/setup-raylib@v1
+      - uses: danielriddell21/github-actions/.github/actions/setup-raylib@v2
         if: ${{ inputs.raylib }}
 
       - name: golangci-lint
@@ -165,10 +173,10 @@ jobs:
         with:
           go-version-file: ${{ inputs.go-version-file }}
 
-      - uses: danielriddell21/github-actions/.github/actions/setup-ebiten@v1
+      - uses: danielriddell21/github-actions/.github/actions/setup-ebiten@v2
         if: ${{ inputs.ebiten }}
 
-      - uses: danielriddell21/github-actions/.github/actions/setup-raylib@v1
+      - uses: danielriddell21/github-actions/.github/actions/setup-raylib@v2
         if: ${{ inputs.raylib }}
 
       - name: Build
@@ -186,12 +194,12 @@ jobs:
         with:
           go-version-file: ${{ inputs.go-version-file }}
 
-      - uses: danielriddell21/github-actions/.github/actions/setup-ebiten@v1
+      - uses: danielriddell21/github-actions/.github/actions/setup-ebiten@v2
         if: ${{ inputs.ebiten }}
         with:
           start-display: "true"
 
-      - uses: danielriddell21/github-actions/.github/actions/setup-raylib@v1
+      - uses: danielriddell21/github-actions/.github/actions/setup-raylib@v2
         if: ${{ inputs.raylib }}
         with:
           start-display: "true"
@@ -209,18 +217,74 @@ jobs:
     if: ${{ always() && inputs.tag && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && github.event_name == 'push' && github.ref == format('refs/heads/{0}', inputs.release-branch) }}
     runs-on: ${{ inputs.runs-on }}
     steps:
+      # Checked before the clone so a missing secret fails here, saying what is
+      # missing, rather than as an unauthenticated checkout further down.
+      - name: The token must exist
+        env:
+          TOKEN: ${{ secrets.tag-token }}
+        run: |
+          if [ -z "${TOKEN}" ]; then
+            echo "::error::tag-token is not set; a tag pushed with the workflow token starts no release"
+            exit 1
+          fi
+
       - uses: actions/checkout@v7
         with:
+          # letsgo tag looks for the previous tag and compares this tree's
+          # exported API against that one's, so a shallow clone with no tags is
+          # not enough.
           fetch-depth: 0
+
+          # A tag pushed with the workflow token starts no workflow, so the
+          # release would never fire. A token of its own does.
+          token: ${{ secrets.tag-token }}
 
       - uses: actions/setup-go@v7
         with:
           go-version-file: ${{ inputs.go-version-file }}
 
-      - name: Bump version and push tag
-        uses: mathieudutour/github-tag-action@v6.2
+      - name: Prepare to tag
+        id: prepare
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # A commit that already carries a tag has been released. letsgo
+          # ignores tags on HEAD when it looks for the previous one, so without
+          # this it would propose a second version for the same commit.
+          if [ -n "$(git tag --points-at HEAD)" ]; then
+            echo "HEAD is already tagged; nothing to do"
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "proceed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # letsgo works out the next version itself. It reads the same
+      # conventional commits a tag action would and, where the module has an
+      # importable surface, also diffs the exported API against the previous
+      # tag — so a removal no commit message confessed to still reaches a
+      # major.
+      #
+      # --warranted: no feat, fix or API change means no release. Without it
+      # letsgo falls back to a patch, which is the right answer when a person
+      # asks for a version and the wrong one when a documentation commit does.
+      - uses: danielriddell21/letsgo-action@v1
+        if: ${{ steps.prepare.outputs.proceed == 'true' }}
         with:
-          github_token: ${{ secrets.tag-token }}
-          default_bump: false
-          tag_prefix: v
-          release_branches: ${{ inputs.release-branch }}
+          version: ${{ inputs.letsgo-version }}
+          command: tag
+          args: --yes --warranted
+
+      # letsgo creates the tag and deliberately does not push it: pushing is
+      # the one step that cannot be undone, so it belongs to whoever asked.
+      - name: Push the tag
+        if: ${{ steps.prepare.outputs.proceed == 'true' }}
+        run: |
+          set -euo pipefail
+          tag=$(git tag --points-at HEAD)
+          if [ -z "${tag}" ]; then
+            echo "nothing was tagged"
+            exit 0
+          fi
+          git push origin "${tag}"

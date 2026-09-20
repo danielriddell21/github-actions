@@ -1,87 +1,141 @@
 name: Release
 
-# Reusable GoReleaser release, driven by a v* tag push in the calling repo.
+# Reusable letsgo release, driven by a v* tag push in the calling repo.
+#
+# What a release builds is the calling repository's letsgo.mod, not an input
+# here: the target matrix, the archive contents, the tap and the container
+# image are build inputs, and a build input belongs in the repository it
+# describes, pinned by the same commit as the source it builds.
 
 on:
   workflow_call:
     inputs:
       runs-on:
         description: >-
-          Runner. Use macos-latest when the release builds a cgo/Metal darwin
-          binary, since a Linux clang cannot cross-build one.
+          Runner. ubuntu is enough for every target, since letsgo builds pure
+          Go and a darwin binary cross-compiles from Linux.
         type: string
         default: ubuntu-latest
-      go-version:
-        description: Go version passed to setup-go.
+      go-version-file:
+        description: >-
+          File the Go version is read from. A file rather than a version,
+          because the compiler changes the bytes: it is a build input, and
+          go.mod is where the repository already records which one it releases
+          with.
         type: string
-        default: stable
+        default: go.mod
+      letsgo-version:
+        description: >-
+          letsgo release to run. Pinned rather than floating: letsgo decides
+          the archive layout and the linker flags, so a release built by a
+          version nobody chose is a release nobody can reproduce.
+        type: string
+        default: v0.7.0
+      plugins:
+        description: >-
+          Whitespace-separated letsgo plugins to install before the release,
+          such as "letsgo-env letsgo-multi". Each is pinned by digest in the
+          calling repository's letsgo.mod; this only puts them on PATH.
+        type: string
+        default: ""
+      plugins-version:
+        description: letsgo-plugins release the plugins are installed from.
+        type: string
+        default: v0.2.0
       homebrew-tap:
-        description: Mint a GitHub App token with write access to homebrew-tap.
+        description: >-
+          Mint a GitHub App token with write access to the tap. Needed when
+          letsgo.mod carries a brew directive, or when a cask is written below.
         type: boolean
         default: true
       tap-repository:
         description: Repository the tap token is scoped to.
         type: string
         default: homebrew-tap
-      docker-login:
-        description: Log in to ghcr.io before running goreleaser.
-        type: boolean
-        default: false
-      qemu-buildx:
-        description: Set up QEMU and Buildx, for multi-arch image builds.
-        type: boolean
-        default: false
-      goreleaser-args:
-        description: Arguments passed to goreleaser.
-        type: string
-        default: release --clean
-      prerelease:
+
+      # The cask.
+      #
+      # letsgo writes formulas, not casks, and a variant is where the two part
+      # company: the headless build belongs in a formula and the windowed one
+      # in a cask. letsgo-cask reads the release that was just published and
+      # writes it, so it takes no part in the build and there is nothing for it
+      # to pin.
+      cask-name:
         description: >-
-          Mark the created release as a pre-release, so it is never published as
-          Latest automatically. Promotion is then a manual step: marking the
-          release as the full/latest release fires the `released` event, which
-          is what promote.yaml waits for.
-        type: boolean
-        default: true
+          Cask token to write, which is the name people install. Empty means no
+          cask, which is every repository that ships one build.
+        type: string
+        default: ""
+      cask-variant:
+        description: >-
+          Variant whose archives the cask installs, as named in letsgo.mod.
+          Empty means the release's own archives.
+        type: string
+        default: ""
+      cask-desc:
+        description: >-
+          One line describing the cask. Separate from the formula's, because
+          they describe different things: a window and a command.
+        type: string
+        default: ""
+      cask-license:
+        description: SPDX licence for the cask.
+        type: string
+        default: MIT
+      cask-caveats:
+        description: Caveats block, for what somebody has to know before installing.
+        type: string
+        default: ""
     secrets:
       tap-app-private-key:
-        description: Private key of the GitHub App that can write to homebrew-tap.
+        description: Private key of the GitHub App that can write to the tap.
         required: false
       otel-auth-token:
-        description: Passed through to goreleaser as OTEL_AUTH_TOKEN.
+        description: Passed through to the release as OTEL_AUTH_TOKEN.
         required: false
 
 # Permissions are declared by each caller on the calling job, since a called
 # workflow's permissions are capped by the caller's.
 
 jobs:
-  goreleaser:
-    name: GoReleaser
+  release:
+    name: letsgo
     runs-on: ${{ inputs.runs-on }}
     steps:
+      # Deliberately no fetch-depth: 0. letsgo reads the history from the API
+      # when a shallow clone does not have what the changelog needs, so making
+      # every release fetch everything would buy nothing. fetch-tags is still
+      # needed: the tag being released has to be present for letsgo to read the
+      # version from it.
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-tags: true
 
       - uses: actions/setup-go@v7
         with:
-          go-version: ${{ inputs.go-version }}
+          go-version-file: ${{ inputs.go-version-file }}
+          check-latest: false
 
-      - uses: docker/setup-qemu-action@v4
-        if: ${{ inputs.qemu-buildx }}
+      # Plugins are put on PATH, nothing more. letsgo checks each against the
+      # digest its letsgo.mod pins before running it, so installing the wrong
+      # one fails the release rather than quietly changing it.
+      - name: Install plugins
+        if: ${{ inputs.plugins != '' }}
+        env:
+          PLUGINS: ${{ inputs.plugins }}
+          VERSION: ${{ inputs.plugins-version }}
+        run: |
+          set -euo pipefail
+          base="https://github.com/danielriddell21/letsgo-plugins/releases/download/${VERSION}"
+          for plugin in ${PLUGINS}; do
+            curl --proto '=https' --tlsv1.2 -fsSL \
+              "${base}/${plugin}_${VERSION#v}_linux_amd64.tar.gz" \
+              | sudo tar -xz -C /usr/local/bin "${plugin}"
+          done
 
-      - uses: docker/setup-buildx-action@v4
-        if: ${{ inputs.qemu-buildx }}
-
-      - uses: docker/login-action@v4
-        if: ${{ inputs.docker-login }}
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      # vars resolves against the calling repository, so TAP_APP_ID does not
-      # need threading through as an input.
+      # A workflow token cannot write to another repository, so a tap needs an
+      # App token scoped to it. vars resolves against the calling repository,
+      # so TAP_APP_ID does not need threading through as an input.
       - uses: actions/create-github-app-token@v3
         id: tap-token
         if: ${{ inputs.homebrew-tap }}
@@ -89,25 +143,103 @@ jobs:
           app-id: ${{ vars.TAP_APP_ID }}
           private-key: ${{ secrets.tap-app-private-key }}
           owner: ${{ github.repository_owner }}
-          repositories: ${{ inputs.tap-repository }}
+          repositories: |
+            ${{ github.event.repository.name }}
+            ${{ inputs.tap-repository }}
 
-      - uses: goreleaser/goreleaser-action@v7
+      # Whether the release is a pre-release is letsgo.mod's to say, not this
+      # workflow's: it is published that way rather than patched afterwards,
+      # and promote.yaml still fires on the `released` event when one is
+      # promoted by hand.
+      - uses: danielriddell21/letsgo-action@v1
         with:
-          version: latest
-          args: ${{ inputs.goreleaser-args }}
+          version: ${{ inputs.letsgo-version }}
+          token: ${{ steps.tap-token.outputs.token || github.token }}
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HOMEBREW_TAP_TOKEN: ${{ steps.tap-token.outputs.token }}
           OTEL_AUTH_TOKEN: ${{ secrets.otel-auth-token }}
           OTEL_ENDPOINT: ${{ vars.OTEL_ENDPOINT }}
 
-      # Done here rather than via goreleaser's `release.prerelease`, so the
-      # behaviour is set once centrally instead of in every .goreleaser.yaml.
-      - name: Mark release as pre-release
-        if: ${{ inputs.prerelease }}
+  cask:
+    name: cask
+    needs: [release]
+    if: ${{ inputs.cask-name != '' }}
+    runs-on: ${{ inputs.runs-on }}
+    # Only the release job publishes; this writes to the tap with an App token
+    # and needs nothing in the calling repository.
+    permissions:
+      contents: read
+    steps:
+      - name: Install letsgo-cask
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ inputs.plugins-version }}
         run: |
-          id=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${GITHUB_REF_NAME}" --jq .id)
-          gh api -X PATCH "repos/${GITHUB_REPOSITORY}/releases/${id}" \
-            -F prerelease=true -f make_latest=false
+          set -euo pipefail
+          base="https://github.com/danielriddell21/letsgo-plugins/releases/download/${VERSION}"
+          curl --proto '=https' --tlsv1.2 -fsSL \
+            "${base}/letsgo-cask_${VERSION#v}_linux_amd64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin letsgo-cask
+
+      # The manifest the release just published, which carries every archive's
+      # digest. Read from the release rather than rebuilt, so the cask can only
+      # name bytes that were actually published.
+      - name: Fetch the release manifest
+        env:
+          GH_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          curl --proto '=https' --tlsv1.2 -fsSL -o letsgo.json \
+            "https://github.com/${{ github.repository }}/releases/download/${GH_TAG}/letsgo.json"
+
+      - uses: actions/create-github-app-token@v3
+        id: tap-token
+        with:
+          app-id: ${{ vars.TAP_APP_ID }}
+          private-key: ${{ secrets.tap-app-private-key }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ inputs.tap-repository }}
+
+      - uses: actions/checkout@v7
+        with:
+          repository: ${{ github.repository_owner }}/${{ inputs.tap-repository }}
+          token: ${{ steps.tap-token.outputs.token }}
+          path: tap
+
+      # --token names the cask after the program rather than the archive: the
+      # archive carries the variant's suffix to tell two builds apart, and the
+      # command somebody types should not depend on which one they installed.
+      - name: Write the cask
+        env:
+          NAME: ${{ inputs.cask-name }}
+          VARIANT: ${{ inputs.cask-variant }}
+          DESC: ${{ inputs.cask-desc }}
+          LICENSE: ${{ inputs.cask-license }}
+          CAVEATS: ${{ inputs.cask-caveats }}
+        run: |
+          set -euo pipefail
+          letsgo-cask letsgo.json \
+            --repo "${GITHUB_REPOSITORY}" \
+            --token "${NAME}" \
+            --variant "${VARIANT}" \
+            --desc "${DESC}" \
+            --license "${LICENSE}" \
+            --caveats "${CAVEATS}" \
+            -o "tap/Casks/${NAME}.rb"
+
+      # Rendering is deterministic, so an unchanged cask is not committed again
+      # and re-running a release does not churn the tap.
+      - name: Commit it
+        working-directory: tap
+        env:
+          NAME: ${{ inputs.cask-name }}
+          GH_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- "Casks/${NAME}.rb"; then
+            echo "cask unchanged"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "Casks/${NAME}.rb"
+          git commit -m "${NAME} ${GH_TAG}"
+          git push
