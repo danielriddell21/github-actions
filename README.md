@@ -25,7 +25,7 @@ off, so the minimal repos call this too rather than keeping a separate copy.
 | `golangci-version` | `v2.13.2` | Pinned; see below |
 | `gremlins-config` | `.gremlins.yaml` | |
 | `gremlins-version` | `v0.6.0` | Pinned |
-| `letsgo-version` | `v0.8.0` | Version the tag job runs |
+| `letsgo-version` | `latest` | Version the tag job runs |
 | `release-branch` | `trunk` | Gates `mutate` and `tag` |
 
 Secrets: `codecov-token` (when `coverage`), `tag-token` (when `tag`).

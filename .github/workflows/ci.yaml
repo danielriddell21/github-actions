@@ -82,10 +82,15 @@ on:
         default: v0.6.0
       letsgo-version:
         description: >-
-          letsgo release the tag job runs. Pinned because it decides the next
-          version, and a tool nobody chose is an answer nobody chose.
+          letsgo release the tag job runs, as a tag or "latest".
+
+          Floating, unlike the linters above: what this decides is a version
+          number, not bytes, so a newer letsgo cannot make an old answer
+          wrong the way a newer linter can make an old commit red. It can
+          only read the commits and the exported API better than the one
+          before it.
         type: string
-        default: v0.8.0
+        default: latest
       release-branch:
         description: Branch that mutation testing and tagging run on.
         type: string
