@@ -70,6 +70,7 @@ push in the calling repo.
 | `plugins-version` | `v0.2.0` | letsgo-plugins release to install from |
 | `homebrew-tap` | `true` | Mints an App token scoped to the tap |
 | `tap-repository` | `homebrew-tap` | |
+| `attest` | `false` | Build provenance; needs two permissions from the caller |
 | `cask-name` | *(none)* | Set it to write a cask; empty means none |
 | `cask-variant` | *(none)* | Variant whose archives the cask installs |
 | `cask-desc` / `cask-license` / `cask-caveats` | / `MIT` / | Cask metadata |
@@ -86,6 +87,25 @@ That includes whether a release is a pre-release: `letsgo.mod` says
 workflow patching it afterwards. Promotion is still manual, and still what
 `promote.yaml` waits for — marking a release as the full release fires the
 `released` event. Nothing is retagged or deployed until you make that call.
+
+#### Provenance
+
+`attest: true` adds an attestation recording which workflow, repository and
+commit produced the archives — the one property rebuilding them cannot
+establish, since a reproducible build says the bytes follow from the source and
+says nothing about who ran it. It is keyed by digest, so it covers the copies
+already attached to the release.
+
+It is off by default because a called workflow's permissions are capped by the
+calling job's, and the callers here grant `contents: write` alone. Turning it
+on means granting two more, or the release fails at that step:
+
+```yaml
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+```
 
 #### Casks
 

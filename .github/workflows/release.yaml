@@ -53,6 +53,21 @@ on:
         type: string
         default: homebrew-tap
 
+      attest:
+        description: >-
+          Attest build provenance for the archives in dist/. The attestation
+          is signed with a short-lived identity minted for the run, so there
+          is no key to store and none to rotate; what it establishes is the
+          workflow, repository and commit that produced the bytes, which is
+          the one thing rebuilding them cannot.
+
+          Off by default only because a called workflow's permissions are
+          capped by the caller's: the calling job has to grant `id-token:
+          write` and `attestations: write` first, and turning this on without
+          them fails the release rather than skipping the step.
+        type: boolean
+        default: false
+
       # The cask.
       #
       # letsgo writes formulas, not casks, and a variant is where the two part
@@ -158,6 +173,16 @@ jobs:
         env:
           OTEL_AUTH_TOKEN: ${{ secrets.otel-auth-token }}
           OTEL_ENDPOINT: ${{ vars.OTEL_ENDPOINT }}
+
+      # Records which workflow built these bytes. Keyed by digest, so it
+      # covers the copies already attached to the release.
+      - name: Attest provenance
+        if: ${{ inputs.attest }}
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: |
+            dist/*.tar.gz
+            dist/*.zip
 
   cask:
     name: cask
