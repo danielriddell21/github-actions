@@ -65,7 +65,7 @@ push in the calling repo.
 | --- | --- | --- |
 | `runs-on` | `ubuntu-latest` | Every target cross-compiles; no macOS runner needed |
 | `go-version-file` | `go.mod` | The compiler is a build input, so it is pinned by file |
-| `letsgo-version` | `v0.8.0` | |
+| `letsgo-version` | `latest` | Pin to a tag where an old release must rebuild to the old bytes |
 | `plugins` | *(none)* | e.g. `letsgo-env letsgo-multi` |
 | `plugins-version` | `v0.2.0` | letsgo-plugins release to install from |
 | `homebrew-tap` | `true` | Mints an App token scoped to the tap |
@@ -87,6 +87,18 @@ That includes whether a release is a pre-release: `letsgo.mod` says
 workflow patching it afterwards. Promotion is still manual, and still what
 `promote.yaml` waits for — marking a release as the full release fires the
 `released` event. Nothing is retagged or deployed until you make that call.
+
+#### Plugins
+
+`plugins` names them; `letsgo plugin install` fetches them. letsgo is installed
+first, with `command: ""`, so that its own plugin command is the thing that
+does the fetching: it checks the archive against the plugins release's manifest
+and the executable inside the archive against the manifest too, where the curl
+recipe this replaces fetched over TLS and trusted whatever came back.
+
+That command arrived in letsgo v0.9.0. A repository that pins `letsgo-version`
+below it still releases — the step warns and falls back to the download — so
+the pin is worth revisiting rather than urgent.
 
 #### Provenance
 

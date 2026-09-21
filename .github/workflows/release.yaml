@@ -26,11 +26,17 @@ on:
         default: go.mod
       letsgo-version:
         description: >-
-          letsgo release to run. Pinned rather than floating: letsgo decides
-          the archive layout and the linker flags, so a release built by a
-          version nobody chose is a release nobody can reproduce.
+          letsgo release to run, as a tag or "latest".
+
+          Floating by default, so that a letsgo release does not need a
+          change here and a tag move to reach the repositories that use it.
+          The cost is real and worth naming: letsgo decides the archive
+          layout and the linker flags, so two releases of one commit built
+          by two letsgo versions can differ. Pin it to a tag for a
+          repository where rebuilding an old release has to produce the old
+          bytes.
         type: string
-        default: v0.8.0
+        default: latest
       plugins:
         description: >-
           Whitespace-separated letsgo plugins to install before the release,
@@ -131,16 +137,45 @@ jobs:
           go-version-file: ${{ inputs.go-version-file }}
           check-latest: false
 
+      # letsgo installs its own plugins, so it has to be here before them.
+      # command: "" installs and runs nothing; the release step below is the
+      # same action again, by then already on PATH.
+      - uses: danielriddell21/letsgo-action@v1
+        if: ${{ inputs.plugins != '' }}
+        with:
+          version: ${{ inputs.letsgo-version }}
+          command: ""
+
       # Plugins are put on PATH, nothing more. letsgo checks each against the
       # digest its letsgo.mod pins before running it, so installing the wrong
       # one fails the release rather than quietly changing it.
+      #
+      # `letsgo plugin install` rather than curl: it checks the archive
+      # against the release's own manifest, and the executable inside the
+      # archive against the manifest too, where the recipe it replaces
+      # fetched over TLS and trusted whatever came back.
       - name: Install plugins
         if: ${{ inputs.plugins != '' }}
         env:
           PLUGINS: ${{ inputs.plugins }}
           VERSION: ${{ inputs.plugins-version }}
+          LETSGO_VERSION: ${{ inputs.letsgo-version }}
         run: |
           set -euo pipefail
+
+          # The plugin command arrived in letsgo v0.9.0. A repository pinned
+          # below that still has to be able to release, so say what is
+          # missing and fall back, rather than fail on a subcommand that does
+          # not exist.
+          if letsgo plugin help >/dev/null 2>&1; then
+            for plugin in ${PLUGINS}; do
+              letsgo plugin install "${plugin}@${VERSION}"
+            done
+            exit 0
+          fi
+
+          echo "::warning::letsgo ${LETSGO_VERSION} has no plugin command, which needs v0.9.0 or later; falling back to an unverified download"
+
           base="https://github.com/danielriddell21/letsgo-plugins/releases/download/${VERSION}"
           for plugin in ${PLUGINS}; do
             curl --proto '=https' --tlsv1.2 -fsSL \
