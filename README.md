@@ -67,7 +67,7 @@ push in the calling repo.
 | `go-version-file` | `go.mod` | The compiler is a build input, so it is pinned by file |
 | `letsgo-version` | `latest` | Pin to a tag where an old release must rebuild to the old bytes |
 | `plugins` | *(none)* | e.g. `letsgo-env letsgo-multi` |
-| `plugins-version` | `v0.2.0` | letsgo-plugins release to install from |
+| `plugins-version` | `v0.3.0` | letsgo-plugins release to install from |
 | `homebrew-tap` | `true` | Mints an App token scoped to the tap |
 | `tap-repository` | `homebrew-tap` | |
 | `attest` | `false` | Build provenance; needs two permissions from the caller |

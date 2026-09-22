@@ -48,10 +48,11 @@ on:
         description: >-
           letsgo-plugins release the plugins are installed from.
 
-          A cask needs one carrying letsgo-cask's --tap flag, since the cask
-          job publishes through it rather than committing from a checkout.
+          A cask needs v0.3.0 or later: that is where letsgo-cask gained the
+          --tap flag it publishes through, rather than committing from a
+          checkout.
         type: string
-        default: v0.2.0
+        default: v0.3.0
       homebrew-tap:
         description: >-
           Mint a GitHub App token with write access to the tap. Needed when
