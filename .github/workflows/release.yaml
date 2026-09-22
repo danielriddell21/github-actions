@@ -45,7 +45,11 @@ on:
         type: string
         default: ""
       plugins-version:
-        description: letsgo-plugins release the plugins are installed from.
+        description: >-
+          letsgo-plugins release the plugins are installed from.
+
+          A cask needs one carrying letsgo-cask's --tap flag, since the cask
+          job publishes through it rather than committing from a checkout.
         type: string
         default: v0.2.0
       homebrew-tap:
@@ -109,7 +113,11 @@ on:
         default: ""
     secrets:
       tap-app-private-key:
-        description: Private key of the GitHub App that can write to the tap.
+        description: >-
+          Private key of the GitHub App that publishes to the tap. Scope the
+          App's installation to the tap and nothing else: the release itself is
+          published with the workflow token, so the App needs no access to the
+          repository being released.
         required: false
       otel-auth-token:
         description: Passed through to the release as OTEL_AUTH_TOKEN.
@@ -185,7 +193,13 @@ jobs:
 
       # A workflow token cannot write to another repository, so a tap needs an
       # App token scoped to it. vars resolves against the calling repository,
-      # so TAP_APP_ID does not need threading through as an input.
+      # so the App id does not need threading through as an input.
+      #
+      # Note what repositories does not list: the calling repository. Its
+      # release is published with the workflow token, so the App need not be
+      # installed there — which is also what stops a new caller from failing
+      # its first release with a 404 from the installation lookup for having
+      # been left out of one.
       - uses: actions/create-github-app-token@v3
         id: tap-token
         if: ${{ inputs.homebrew-tap }}
@@ -193,9 +207,7 @@ jobs:
           app-id: ${{ vars.TAP_APP_ID }}
           private-key: ${{ secrets.tap-app-private-key }}
           owner: ${{ github.repository_owner }}
-          repositories: |
-            ${{ github.event.repository.name }}
-            ${{ inputs.tap-repository }}
+          repositories: ${{ inputs.tap-repository }}
 
       # Whether the release is a pre-release is letsgo.mod's to say, not this
       # workflow's: it is published that way rather than patched afterwards,
@@ -204,7 +216,12 @@ jobs:
       - uses: danielriddell21/letsgo-action@v1
         with:
           version: ${{ inputs.letsgo-version }}
-          token: ${{ steps.tap-token.outputs.token || github.token }}
+
+          # The release is this repository's own, so the workflow token
+          # publishes it: minted for the run, expiring with it, permissions
+          # declared by the caller. The App token goes to the tap alone.
+          token: ${{ github.token }}
+          tap-token: ${{ steps.tap-token.outputs.token }}
         env:
           OTEL_AUTH_TOKEN: ${{ secrets.otel-auth-token }}
           OTEL_ENDPOINT: ${{ vars.OTEL_ENDPOINT }}
@@ -258,22 +275,29 @@ jobs:
           owner: ${{ github.repository_owner }}
           repositories: ${{ inputs.tap-repository }}
 
-      - uses: actions/checkout@v7
-        with:
-          repository: ${{ github.repository_owner }}/${{ inputs.tap-repository }}
-          token: ${{ steps.tap-token.outputs.token }}
-          path: tap
-
+      # letsgo-cask writes to the tap itself, through the contents API: one
+      # file, no checkout, and a write conditional on the blob it read, so a
+      # change that raced this one fails rather than being clobbered. Rendering
+      # is deterministic and an identical cask is not committed again, so
+      # re-running a release does not churn the tap.
+      #
+      # No commit identity is set here. The commit is attributed to the App
+      # behind the token, which is the same way the formula is attributed —
+      # where this step used to hard-code github-actions[bot] and leave a tap's
+      # history with two authors for the same kind of change.
+      #
       # --token names the cask after the program rather than the archive: the
       # archive carries the variant's suffix to tell two builds apart, and the
       # command somebody types should not depend on which one they installed.
-      - name: Write the cask
+      - name: Publish the cask
         env:
           NAME: ${{ inputs.cask-name }}
           VARIANT: ${{ inputs.cask-variant }}
           DESC: ${{ inputs.cask-desc }}
           LICENSE: ${{ inputs.cask-license }}
           CAVEATS: ${{ inputs.cask-caveats }}
+          TAP: ${{ github.repository_owner }}/${{ inputs.tap-repository }}
+          LETSGO_TAP_TOKEN: ${{ steps.tap-token.outputs.token }}
         run: |
           set -euo pipefail
           letsgo-cask letsgo.json \
@@ -283,23 +307,4 @@ jobs:
             --desc "${DESC}" \
             --license "${LICENSE}" \
             --caveats "${CAVEATS}" \
-            -o "tap/Casks/${NAME}.rb"
-
-      # Rendering is deterministic, so an unchanged cask is not committed again
-      # and re-running a release does not churn the tap.
-      - name: Commit it
-        working-directory: tap
-        env:
-          NAME: ${{ inputs.cask-name }}
-          GH_TAG: ${{ github.ref_name }}
-        run: |
-          set -euo pipefail
-          if git diff --quiet -- "Casks/${NAME}.rb"; then
-            echo "cask unchanged"
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add "Casks/${NAME}.rb"
-          git commit -m "${NAME} ${GH_TAG}"
-          git push
+            --tap "${TAP}"
