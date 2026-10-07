@@ -56,108 +56,50 @@ jobs:
       tag-token: ${{ secrets.EXAMPLE_TOKEN }}
 ```
 
-### `release.yaml`
+## Releasing
 
-[letsgo](https://github.com/danielriddell21/letsgo), triggered by a `v*` tag
-push in the calling repo.
+Releases do not go through this repository. Each letsgo repository calls
+[letsgo-action](https://github.com/danielriddell21/letsgo-action) from its own
+`release.yaml`, so there is one layer between a tag and letsgo rather than two.
 
-| Input | Default | Notes |
-| --- | --- | --- |
-| `runs-on` | `ubuntu-latest` | Every target cross-compiles; no macOS runner needed |
-| `go-version-file` | `go.mod` | The compiler is a build input, so it is pinned by file |
-| `letsgo-version` | `latest` | Pin to a tag where an old release must rebuild to the old bytes |
-| `plugins` | *(none)* | e.g. `letsgo-env letsgo-multi` |
-| `plugins-version` | `v0.3.0` | letsgo-plugins release to install from |
-| `homebrew-tap` | `true` | Mints an App token scoped to the tap |
-| `tap-repository` | `homebrew-tap` | |
-| `attest` | `false` | Build provenance; needs two permissions from the caller |
-| `cask-name` | *(none)* | Set it to write a cask; empty means none |
-| `cask-variant` | *(none)* | Variant whose archives the cask installs |
-| `cask-desc` / `cask-license` / `cask-caveats` | / `MIT` / | Cask metadata |
-
-Secrets: `tap-app-private-key`, `otel-auth-token`.
-
-What a release builds is the calling repository's `letsgo.mod` rather than an
-input here. The target matrix, the archive contents, the tap and the container
-image are all build inputs, and a build input belongs in the repository it
-describes, pinned by the same commit as the source.
-
-That includes whether a release is a pre-release: `letsgo.mod` says
-`release prerelease=true` and letsgo publishes it that way, rather than the
-workflow patching it afterwards. Promotion is still manual, and still what
-`promote.yaml` waits for — marking a release as the full release fires the
-`released` event. Nothing is retagged or deployed until you make that call.
-
-#### Plugins
-
-`plugins` names them; `letsgo plugin install` fetches them. letsgo is installed
-first, with `command: ""`, so that its own plugin command is the thing that
-does the fetching: it checks the archive against the plugins release's manifest
-and the executable inside the archive against the manifest too, where the curl
-recipe this replaces fetched over TLS and trusted whatever came back.
-
-That command arrived in letsgo v0.9.0. A repository that pins `letsgo-version`
-below it still releases — the step warns and falls back to the download — so
-the pin is worth revisiting rather than urgent.
-
-#### Provenance
-
-`attest: true` adds an attestation recording which workflow, repository and
-commit produced the archives — the one property rebuilding them cannot
-establish, since a reproducible build says the bytes follow from the source and
-says nothing about who ran it. It is keyed by digest, so it covers the copies
-already attached to the release.
-
-It is off by default because a called workflow's permissions are capped by the
-calling job's, and the callers here grant `contents: write` alone. Turning it
-on means granting two more, or the release fails at that step:
+1. A push to `trunk` runs `ci.yaml`. Its tag job runs
+   `letsgo tag --yes --warranted` and pushes the tag with the repository's
+   `tag-token`, so a push of only `docs:` or `chore:` commits tags nothing.
+2. The `v*` tag runs the repository's `release.yaml`: checkout with tags,
+   `setup-go` from `go.mod`, then `letsgo-action`. What is built, the tap,
+   the image, plugins and any cask are `letsgo.mod`'s to say; plugins pinned
+   there are installed by the action, and a cask is the `letsgo-cask` plugin on
+   the `tap-files` hook with its settings in `.letsgo/cask.mod`.
+3. `letsgo.mod` says `release prerelease=true`. Promoting the pre-release in
+   the GitHub UI fires `released`, which a repository that ships an image
+   handles in its own `promote.yaml`.
 
 ```yaml
-    permissions:
-      contents: write
-      id-token: write
-      attestations: write
-```
+name: Release
 
-#### Casks
+on:
+  push:
+    tags: ["v*"]
 
-letsgo writes formulas, not casks, and a variant is where the two part company:
-the headless build belongs in a formula and the windowed one in a cask. Setting
-`cask-name` adds a second job that reads the manifest the release just
-published and writes the cask into the tap.
+permissions:
+  contents: write
 
-```yaml
 jobs:
   release:
-    permissions:
-      contents: write
-    uses: danielriddell21/github-actions/.github/workflows/release.yaml@v2
-    with:
-      cask-name: gambit
-      cask-variant: gui
-      cask-desc: Watch two chess agents play in a native macOS window
-      cask-caveats: The board opens a window and is macOS-only; elsewhere install the formula.
-    secrets:
-      tap-app-private-key: ${{ secrets.TAP_APP_PRIVATE_KEY }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-tags: true
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          check-latest: false
+      - uses: danielriddell21/letsgo-action@v1
+        with:
+          tap-app-id: ${{ vars.TAP_APP_ID }}
+          tap-app-private-key: ${{ secrets.TAP_APP_PRIVATE_KEY }}
 ```
-
-`vars.TAP_APP_ID` and `vars.OTEL_ENDPOINT` resolve against the *calling*
-repository, so they are read directly and are not inputs.
-
-### `promote.yaml`
-
-Retag the released image as `latest`, then pin the version into the manifests
-repo. Triggered by a `released` release event.
-
-| Input | Default |
-| --- | --- |
-| `image` | calling repo's name |
-| `registry` | `ghcr.io` |
-| `manifests-repo` | `danielriddell21/riddellious-dev` |
-| `manifests-ref` | `trunk` |
-| `manifests-path` | `manifests/` |
-
-Secrets: `manifests-token`.
 
 ## Composite actions
 
