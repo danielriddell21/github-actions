@@ -219,26 +219,18 @@ jobs:
         with:
           start-display: "true"
 
-      - name: Install gremlins
-        env:
-          VERSION: ${{ inputs.gremlins-version }}
-        run: go install "github.com/go-gremlins/gremlins/cmd/gremlins@${VERSION}"
-
-      # A mutant that turns a loop infinite while it appends allocates until
-      # the runner itself is killed, long before gremlins' timeout fires; the
-      # job then dies with "the runner has received a shutdown signal" and no
-      # result at all. Capping each process's address space makes that mutant
-      # fail its allocation instead, which gremlins counts as killed, and
-      # capping the workers keeps every cap's sum inside the runner's memory.
-      - name: Mutation test
-        env:
-          CONFIG: ${{ inputs.gremlins-config }}
-          WORKERS: ${{ inputs.gremlins-workers }}
-          MEMORY_MB: ${{ inputs.gremlins-memory-mb }}
-        run: |
-          set -euo pipefail
-          ulimit -v $((MEMORY_MB * 1024))
-          gremlins unleash --config "${CONFIG}" --workers "${WORKERS}"
+      # The fork authenticates its release lookup, so a busy runner pool does
+      # not hit the API's unauthenticated rate limit, and caps each process's
+      # memory: a mutant that turns a loop infinite while it appends would
+      # otherwise grow until the runner itself is killed, and the job would
+      # end with no result at all. Capped, it fails its allocation instead,
+      # which gremlins counts as killed.
+      - uses: danielriddell21/gremlins-action@v1
+        with:
+          version: ${{ inputs.gremlins-version }}
+          args: --config ${{ inputs.gremlins-config }}
+          workers: ${{ inputs.gremlins-workers }}
+          memory-mb: ${{ inputs.gremlins-memory-mb }}
 
   tag:
     name: Tag
