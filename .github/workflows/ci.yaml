@@ -86,10 +86,11 @@ on:
         default: 2
       gremlins-memory-mb:
         description: >-
-          Address-space cap per process during mutation testing, in MiB.
-          Times gremlins-workers, it has to fit in the runner's memory.
+          Memory limit for the whole mutation run, in MiB. A runaway mutant's
+          test is killed at this rather than the runner; leave headroom for
+          the runner itself.
         type: number
-        default: 6144
+        default: 12288
       letsgo-version:
         description: >-
           letsgo release the tag job runs, as a tag or "latest".
@@ -220,11 +221,11 @@ jobs:
           start-display: "true"
 
       # The fork authenticates its release lookup, so a busy runner pool does
-      # not hit the API's unauthenticated rate limit, and caps each process's
-      # memory: a mutant that turns a loop infinite while it appends would
-      # otherwise grow until the runner itself is killed, and the job would
-      # end with no result at all. Capped, it fails its allocation instead,
-      # which gremlins counts as killed.
+      # not hit the API's unauthenticated rate limit, and runs gremlins in a
+      # memory-limited cgroup: a mutant that turns a loop infinite while it
+      # appends would otherwise grow until the runner itself is killed, and
+      # the job would end with no result at all. Limited, the kernel kills
+      # that mutant's test instead, which gremlins counts as killed.
       - uses: danielriddell21/gremlins-action@v1
         with:
           version: ${{ inputs.gremlins-version }}
