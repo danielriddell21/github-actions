@@ -80,6 +80,16 @@ on:
         description: gremlins release to run. Pinned for the same reason as golangci-lint.
         type: string
         default: v0.6.0
+      gremlins-workers:
+        description: Mutants tested in parallel. Each runs its own go test.
+        type: number
+        default: 2
+      gremlins-memory-mb:
+        description: >-
+          Address-space cap per process during mutation testing, in MiB.
+          Times gremlins-workers, it has to fit in the runner's memory.
+        type: number
+        default: 6144
       letsgo-version:
         description: >-
           letsgo release the tag job runs, as a tag or "latest".
@@ -209,10 +219,26 @@ jobs:
         with:
           start-display: "true"
 
-      - uses: go-gremlins/gremlins-action@v1
-        with:
-          version: ${{ inputs.gremlins-version }}
-          args: --config ${{ inputs.gremlins-config }}
+      - name: Install gremlins
+        env:
+          VERSION: ${{ inputs.gremlins-version }}
+        run: go install "github.com/go-gremlins/gremlins/cmd/gremlins@${VERSION}"
+
+      # A mutant that turns a loop infinite while it appends allocates until
+      # the runner itself is killed, long before gremlins' timeout fires; the
+      # job then dies with "the runner has received a shutdown signal" and no
+      # result at all. Capping each process's address space makes that mutant
+      # fail its allocation instead, which gremlins counts as killed, and
+      # capping the workers keeps every cap's sum inside the runner's memory.
+      - name: Mutation test
+        env:
+          CONFIG: ${{ inputs.gremlins-config }}
+          WORKERS: ${{ inputs.gremlins-workers }}
+          MEMORY_MB: ${{ inputs.gremlins-memory-mb }}
+        run: |
+          set -euo pipefail
+          ulimit -v $((MEMORY_MB * 1024))
+          gremlins unleash --config "${CONFIG}" --workers "${WORKERS}"
 
   tag:
     name: Tag
