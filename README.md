@@ -21,6 +21,7 @@ off, so the minimal repos call this too rather than keeping a separate copy.
 | `vet` | `false` | Adds `go vet ./...` to the test job |
 | `coverage` | `true` | Codecov upload |
 | `build` / `lint` / `mutate` / `tag` | `true` | Job toggles |
+| `pre` | `false` | Tag a release candidate (`-rc.N`); see [Releasing](#releasing) |
 | `golangci-config` | `.golangci.yml` | |
 | `golangci-version` | `v2.13.2` | Pinned; see below |
 | `gremlins-config` | `.gremlins.yaml` | |
@@ -60,19 +61,30 @@ jobs:
 
 Releases do not go through this repository. Each letsgo repository calls
 [letsgo-action](https://github.com/danielriddell21/letsgo-action) from its own
-`release.yaml`, so there is one layer between a tag and letsgo rather than two.
+workflows, so there is one layer between a tag and letsgo rather than two.
 
-1. A push to `trunk` runs `ci.yaml`. Its tag job runs
-   `letsgo tag --yes --warranted` and pushes the tag with the repository's
-   `tag-token`, so a push of only `docs:` or `chore:` commits tags nothing.
-2. The `v*` tag runs the repository's `release.yaml`: checkout with tags,
-   `setup-go` from `go.mod`, then `letsgo-action`. What is built, the tap,
-   the image, plugins and any cask are `letsgo.mod`'s to say; plugins pinned
-   there are installed by the action, and a cask is the `letsgo-cask` plugin on
-   the `tap-files` hook with its settings in `.letsgo/cask.mod`.
-3. `letsgo.mod` says `release prerelease=true`. Promoting the pre-release in
-   the GitHub UI fires `released`, which a repository that ships an image
-   handles in its own `promote.yaml`.
+A repository that publishes a Homebrew formula, a cask or a container image
+releases the way letsgo itself does: every trunk release is a candidate, and a
+person decides when one ships.
+
+1. A push to `trunk` runs `ci.yaml` with `pre: true`. Its tag job runs
+   `letsgo tag --yes --warranted --pre` and pushes the candidate tag, such as
+   `v1.4.0-rc.1`, with the repository's `tag-token`. A push of only `docs:` or
+   `chore:` commits tags nothing.
+2. The tag runs the repository's `release.yaml`, which publishes the candidate
+   as a pre-release: the GitHub release, the `@next` formula and the image's
+   `next` channel. Nothing a user installs by default moves.
+3. Unticking "Set as a pre-release" on the candidate in the GitHub UI fires
+   `released`, which runs `promote.yaml`. `letsgo promote` rebuilds the
+   candidate, refuses if it does not match, tags `v1.4.0`, and publishes the
+   stable release, the formula and any cask, and the image's `latest` and
+   `X.Y` tags. The candidate goes back to being a pre-release.
+
+What is built, the tap, the image, plugins and any cask are `letsgo.mod`'s to
+say; plugins pinned there are installed by the action, and a cask is the
+`letsgo-cask` plugin on the `tap-files` hook with its settings in
+`.letsgo/cask.mod`. A repository that publishes none of these leaves `pre` off
+and has no promote.
 
 ```yaml
 name: Release
@@ -86,6 +98,7 @@ permissions:
 
 jobs:
   release:
+    name: letsgo
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -100,6 +113,45 @@ jobs:
           tap-app-id: ${{ vars.TAP_APP_ID }}
           tap-app-private-key: ${{ secrets.TAP_APP_PRIVATE_KEY }}
 ```
+
+```yaml
+name: Promote
+
+on:
+  release:
+    types: [released]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release candidate to promote
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  promote:
+    name: letsgo
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.release.tag_name, '-')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.event.release.tag_name }}
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          check-latest: false
+      - uses: danielriddell21/letsgo-action@v1
+        with:
+          command: promote
+          args: --yes --work dist ${{ inputs.tag || github.event.release.tag_name }}
+          tap-app-id: ${{ vars.TAP_APP_ID }}
+          tap-app-private-key: ${{ secrets.TAP_APP_PRIVATE_KEY }}
+```
+
+A repository with an image adds `packages: write` to both.
 
 ## Composite actions
 

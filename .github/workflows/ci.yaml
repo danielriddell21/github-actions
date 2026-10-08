@@ -61,6 +61,14 @@ on:
         description: Run the tag job on pushes to the release branch.
         type: boolean
         default: true
+      pre:
+        description: >-
+          Tag a release candidate (vX.Y.Z-rc.N) rather than a stable version.
+          For the repos that publish a formula, cask or image: the candidate
+          ships as a pre-release, and unticking that on GitHub runs the
+          repo's promote workflow, which publishes the stable version.
+        type: boolean
+        default: false
       golangci-config:
         description: golangci-lint config path.
         type: string
@@ -271,8 +279,8 @@ jobs:
         id: prepare
         run: |
           set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # The tagger identity is letsgo-action's: it sets letsgo-champ[bot].
 
           # A commit that already carries a tag has been released. letsgo
           # ignores tags on HEAD when it looks for the previous one, so without
@@ -293,12 +301,14 @@ jobs:
       # --warranted: no feat, fix or API change means no release. Without it
       # letsgo falls back to a patch, which is the right answer when a person
       # asks for a version and the wrong one when a documentation commit does.
+      #
+      # --pre: a release candidate, which only `letsgo promote` turns stable.
       - uses: danielriddell21/letsgo-action@v1
         if: ${{ steps.prepare.outputs.proceed == 'true' }}
         with:
           version: ${{ inputs.letsgo-version }}
           command: tag
-          args: --yes --warranted
+          args: --yes --warranted${{ inputs.pre && ' --pre' || '' }}
 
       # letsgo creates the tag and deliberately does not push it: pushing is
       # the one step that cannot be undone, so it belongs to whoever asked.
